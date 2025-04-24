@@ -32,6 +32,8 @@ def get_spotify_client():
         scope=SCOPE,
         show_dialog=True,
         open_browser=True
+        port=8501
+            
     ))
 
 sp = get_spotify_client()
