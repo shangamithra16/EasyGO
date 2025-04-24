@@ -2,6 +2,8 @@ import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import uuid
+import asyncio
+import aiohttp
 
 # Spotify credentials from Streamlit secrets
 CLIENT_ID = st.secrets["CLIENT_ID"]
@@ -29,6 +31,20 @@ def start_playback():
 
 def pause_playback():
     sp.pause_playback()
+
+# Async function for getting playlists
+async def get_playlists(session, category_id):
+    url = f"https://api.spotify.com/v1/browse/categories/{category_id}/playlists"
+    async with session.get(url, headers={"Authorization": f"Bearer {sp.auth_manager.get_access_token()}"}) as resp:
+        playlists_data = await resp.json()
+        return playlists_data.get('playlists', {}).get('items', [])
+
+# Async function for getting tracks from playlist
+async def get_tracks_from_playlist(session, playlist_id):
+    url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
+    async with session.get(url, headers={"Authorization": f"Bearer {sp.auth_manager.get_access_token()}"}) as resp:
+        tracks_data = await resp.json()
+        return tracks_data.get('items', [])
 
 # UI setup
 st.title("🎶 Music Sync App with Live Spotify Data")
@@ -67,34 +83,41 @@ if st.session_state['room_id']:
 
     # Step 2: Fetch playlists for that category
     st.subheader(f"🎼 Trending Playlists in {selected_language}")
-    playlists = sp.category_playlists(category_id=category_id, country="IN", limit=5)['playlists']['items']
-    if playlists:
-        playlist_names = [pl['name'] for pl in playlists]
-        selected_playlist_name = st.selectbox("Choose a playlist:", playlist_names)
+    
+    # Async fetch playlists
+    async def fetch_playlists_and_tracks():
+        async with aiohttp.ClientSession() as session:
+            playlists = await get_playlists(session, category_id)
+            if playlists:
+                playlist_names = [pl['name'] for pl in playlists]
+                selected_playlist_name = st.selectbox("Choose a playlist:", playlist_names)
 
-        if selected_playlist_name:
-            selected_playlist = next(pl for pl in playlists if pl['name'] == selected_playlist_name)
-            playlist_id = selected_playlist['id']
+                if selected_playlist_name:
+                    selected_playlist = next(pl for pl in playlists if pl['name'] == selected_playlist_name)
+                    playlist_id = selected_playlist['id']
 
-            # Step 3: Get songs from playlist
-            tracks = sp.playlist_items(playlist_id, limit=20)['items']
-            track_names = [item['track']['name'] + " - " + item['track']['artists'][0]['name'] for item in tracks]
-            track_uris = [item['track']['uri'] for item in tracks]
+                    # Fetch tracks from the playlist
+                    tracks = await get_tracks_from_playlist(session, playlist_id)
+                    track_names = [item['track']['name'] + " - " + item['track']['artists'][0]['name'] for item in tracks]
+                    track_uris = [item['track']['uri'] for item in tracks]
 
-            selected_track = st.selectbox("🎧 Choose a song:", track_names)
-            if selected_track:
-                index = track_names.index(selected_track)
-                st.session_state['track_uri'] = track_uris[index]
-                st.write(f"🎶 Selected Track: {selected_track}")
+                    selected_track = st.selectbox("🎧 Choose a song:", track_names)
+                    if selected_track:
+                        index = track_names.index(selected_track)
+                        st.session_state['track_uri'] = track_uris[index]
+                        st.write(f"🎶 Selected Track: {selected_track}")
 
-                if st.button("▶️ Play"):
-                    start_playback()
-                    st.session_state['playback_status'] = 'playing'
-                if st.button("⏸️ Pause"):
-                    pause_playback()
-                    st.session_state['playback_status'] = 'paused'
-    else:
-        st.write("No playlists found for the selected language.")
+                        if st.button("▶️ Play"):
+                            start_playback()
+                            st.session_state['playback_status'] = 'playing'
+                        if st.button("⏸️ Pause"):
+                            pause_playback()
+                            st.session_state['playback_status'] = 'paused'
+            else:
+                st.write("No playlists found for the selected language.")
+
+    # Run the async function to fetch playlists and tracks
+    asyncio.run(fetch_playlists_and_tracks())
 
     # Optional: manual search fallback
     st.markdown("---")
