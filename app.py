@@ -6,7 +6,6 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-
 # Load Spotify credentials from environment variables
 def require_env(name):
     value = os.getenv(name)
@@ -25,18 +24,20 @@ st.title("🎶 SyncTune – Listen Together")
 # Spotify Auth Setup
 @st.cache_resource
 def get_spotify_client():
-    return spotipy.Spotify(auth_manager=SpotifyOAuth(
+    auth_manager = SpotifyOAuth(
         client_id=SPOTIPY_CLIENT_ID,
         client_secret=SPOTIPY_CLIENT_SECRET,
         redirect_uri=SPOTIPY_REDIRECT_URI,
         scope=SCOPE,
-        show_dialog=True,
-        open_browser=True,
-        port=8501
-            
-    ))
+        cache_path=".cache"
+    )
+    return spotipy.Spotify(auth_manager=auth_manager)
 
-sp = get_spotify_client()
+try:
+    sp = get_spotify_client()
+except Exception as e:
+    st.error(f"Failed to authenticate with Spotify: {str(e)}")
+    st.stop()
 
 # Room Management
 room_id = st.query_params.get("room")
@@ -57,21 +58,30 @@ else:
 # Music Search and Playback
 query = st.text_input("Search for a song:")
 if query:
-    results = sp.search(q=query, type="track", limit=5)
-    for idx, item in enumerate(results['tracks']['items']):
-        track_name = item['name']
-        artists = ", ".join(artist['name'] for artist in item['artists'])
-        track_uri = item['uri']
-        st.write(f"{track_name} by {artists}")
-        if st.button(f"Play: {track_name}", key=idx):
-            sp.start_playback(uris=[track_uri])
-            st.success("Playback started!")
+    try:
+        results = sp.search(q=query, type="track", limit=5)
+        for idx, item in enumerate(results['tracks']['items']):
+            track_name = item['name']
+            artists = ", ".join(artist['name'] for artist in item['artists'])
+            track_uri = item['uri']
+            st.write(f"{track_name} by {artists}")
+            if st.button(f"Play: {track_name}", key=idx):
+                try:
+                    sp.start_playback(uris=[track_uri])
+                    st.success("Playback started!")
+                except Exception as e:
+                    st.error(f"Couldn't start playback: {str(e)}")
+    except Exception as e:
+        st.error(f"Search failed: {str(e)}")
 
 # Playback Status
 if st.button("Check Playback Status"):
-    playback = sp.current_playback()
-    if playback and playback.get('is_playing'):
-        track = playback['item']
-        st.write(f"Currently Playing: {track['name']} by {track['artists'][0]['name']}")
-    else:
-        st.write("No music is currently playing.")
+    try:
+        playback = sp.current_playback()
+        if playback and playback.get('is_playing'):
+            track = playback['item']
+            st.write(f"Currently Playing: {track['name']} by {track['artists'][0]['name']}")
+        else:
+            st.write("No music is currently playing.")
+    except Exception as e:
+        st.error(f"Couldn't get playback status: {str(e)}")
