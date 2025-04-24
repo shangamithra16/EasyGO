@@ -14,7 +14,7 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=CLIENT_ID,
                                                redirect_uri=REDIRECT_URI,
                                                scope="user-library-read user-read-playback-state user-modify-playback-state",
                                               open_browser=True))
-sp=get_spotify_client()
+
 
 # Initialize Streamlit session state if not already initialized
 if 'room_id' not in st.session_state:
