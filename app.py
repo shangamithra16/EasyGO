@@ -12,7 +12,9 @@ REDIRECT_URI = st.secrets["REDIRECT_URI"]
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=CLIENT_ID,
                                                client_secret=CLIENT_SECRET,
                                                redirect_uri=REDIRECT_URI,
-                                               scope="user-library-read user-read-playback-state user-modify-playback-state"))
+                                               scope="user-library-read user-read-playback-state user-modify-playback-state",
+                                              open_browser=True))
+sp=get_spotify_client()
 
 # Initialize Streamlit session state if not already initialized
 if 'room_id' not in st.session_state:
@@ -33,6 +35,13 @@ def create_or_join_room():
 
 # Function to search for music
 def search_music(query):
+    query = st.text_input("Search for music:")
+
+    if query:
+        with st.spinner("Searching..."):
+            track_names, track_uris = search_music(query)
+            ...
+
     results = sp.search(q=query, type="track", limit=5)
     
     if not results['tracks']['items']:
