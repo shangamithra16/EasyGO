@@ -31,7 +31,7 @@ def get_spotify_client():
         redirect_uri=SPOTIPY_REDIRECT_URI,
         scope=SCOPE,
         show_dialog=True,
-        open_browser=True
+        open_browser=True,
         port=8501
             
     ))
