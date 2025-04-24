@@ -4,10 +4,16 @@ from spotipy.oauth2 import SpotifyOAuth
 import uuid
 import os
 
-# Spotify credentials (replace "your_*" if not using env vars)
-SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
-SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
-SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
+# Load Spotify credentials from environment variables
+def require_env(name):
+    value = os.getenv(name)
+    if not value:
+        raise EnvironmentError(f"Missing required environment variable: {name}")
+    return value
+
+SPOTIPY_CLIENT_ID = require_env("SPOTIPY_CLIENT_ID")
+SPOTIPY_CLIENT_SECRET = require_env("SPOTIPY_CLIENT_SECRET")
+SPOTIPY_REDIRECT_URI = require_env("SPOTIPY_REDIRECT_URI")
 
 SCOPE = "user-read-playback-state user-modify-playback-state user-read-currently-playing streaming"
 
@@ -28,17 +34,15 @@ def get_spotify_client():
 sp = get_spotify_client()
 
 # Room Management
-query_params = st.experimental_get_query_params()
-room_id = query_params.get("room", [None])[0]
+room_id = st.query_params.get("room")
 
-# Build base URL (fallback to localhost)
 def get_base_url():
     return os.getenv("BASE_URL", "http://localhost:8501")
 
 if not room_id:
     if st.button("Create Room"):
         new_room_id = str(uuid.uuid4())
-        st.experimental_set_query_params(room=new_room_id)
+        st.query_params["room"] = new_room_id  # Set new room in query params
         room_link = f"{get_base_url()}/?room={new_room_id}"
         st.success(f"Room created! Share this link: {room_link}")
         st.stop()
