@@ -1,80 +1,83 @@
 import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-import os
-from dotenv import load_dotenv
+import threading
+import time
 
-# Load environment variables
-load_dotenv()
+# Access the Spotify credentials from Streamlit secrets
+CLIENT_ID = st.secrets["CLIENT_ID"]
+CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
+REDIRECT_URI = st.secrets["REDIRECT_URI"]
 
-# Spotify credentials
-CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
+# Initialize Spotipy client
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=CLIENT_ID,
+                                               client_secret=CLIENT_SECRET,
+                                               redirect_uri=REDIRECT_URI,
+                                               scope="user-library-read user-read-playback-state user-modify-playback-state"))
 
-# App setup
-st.title("🎵 Simple Music Player")
-st.write("Search and play your favorite songs!")
+# Streamlit session state to track room and playback status
+if 'room_id' not in st.session_state:
+    st.session_state['room_id'] = None
+if 'track_uri' not in st.session_state:
+    st.session_state['track_uri'] = None
+if 'playback_status' not in st.session_state:
+    st.session_state['playback_status'] = 'paused'
 
-# Authentication function
-def authenticate_spotify():
-    auth_manager = SpotifyOAuth(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        redirect_uri=REDIRECT_URI,
-        scope="user-library-read user-modify-playback-state streaming",
-        cache_path=".cache"
-    )
-    return spotipy.Spotify(auth_manager=auth_manager)
+# Function to start playback on all devices
+def start_playback():
+    if st.session_state['track_uri']:
+        sp.start_playback(uris=[st.session_state['track_uri']])
 
-# Initialize Spotify client
-if 'sp' not in st.session_state:
-    try:
-        st.session_state.sp = authenticate_spotify()
-        st.success("Connected to Spotify!")
-    except Exception as e:
-        st.error(f"Authentication failed: {str(e)}")
-        st.stop()
+# Function to pause playback on all devices
+def pause_playback():
+    sp.pause_playback()
 
-# Search and play functionality
-search_query = st.text_input("Search for songs, artists, or albums:")
-if search_query:
-    results = st.session_state.sp.search(q=search_query, type="track", limit=10)
-    
-    st.subheader("Search Results")
-    for idx, track in enumerate(results['tracks']['items']):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.write(f"**{track['name']}** by {', '.join(artist['name'] for artist in track['artists'])}")
-        with col2:
-            if st.button("▶️ Play", key=f"play_{idx}"):
-                try:
-                    st.session_state.sp.start_playback(uris=[track['uri']])
-                    st.success(f"Now playing: {track['name']}")
-                except Exception as e:
-                    st.error(f"Couldn't play track: {str(e)}")
+# Function to handle room creation and joining
+def create_or_join_room():
+    room_id = st.text_input("Enter room ID (or create new):")
+    if room_id:
+        st.session_state['room_id'] = room_id
+        st.write(f"Room {room_id} selected.")
+        return True
+    return False
 
-# Player controls
-st.subheader("Player Controls")
-col1, col2, col3 = st.columns(3)
-with col1:
-    if st.button("⏸️ Pause"):
-        st.session_state.sp.pause_playback()
-with col2:
-    if st.button("▶️ Resume"):
-        st.session_state.sp.start_playback()
-with col3:
-    if st.button("⏭️ Next Track"):
-        st.session_state.sp.next_track()
+# Function to search for music and return track URIs
+def search_music(query):
+    results = sp.search(q=query, type="track", limit=5)
+    tracks = results['tracks']['items']
+    track_names = [track['name'] for track in tracks]
+    track_uris = [track['uri'] for track in tracks]
+    return track_names, track_uris
 
-# Current playback info
-if st.button("ℹ️ Show Current Track"):
-    try:
-        current = st.session_state.sp.current_playback()
-        if current and current['is_playing']:
-            track = current['item']
-            st.write(f"**Now Playing:** {track['name']} by {', '.join(artist['name'] for artist in track['artists'])}")
-        else:
-            st.write("No track currently playing")
-    except:
-        st.warning("Couldn't fetch playback info")
+# Streamlit interface
+st.title("Music Sync App")
+
+# Room Management
+if create_or_join_room():
+    st.session_state['track_uri'] = None  # Reset previous track URI
+    # Search for music
+    query = st.text_input("Search for music:")
+    if query:
+        track_names, track_uris = search_music(query)
+        st.write("Select a track:")
+        selected_track = st.selectbox("Choose a song:", track_names)
+        if selected_track:
+            track_index = track_names.index(selected_track)
+            st.session_state['track_uri'] = track_uris[track_index]
+
+            st.write(f"Selected Track: {selected_track}")
+            
+            # Control buttons to synchronize playback
+            play_button = st.button("Play")
+            pause_button = st.button("Pause")
+
+            if play_button:
+                start_playback()
+                st.session_state['playback_status'] = 'playing'
+
+            if pause_button:
+                pause_playback()
+                st.session_state['playback_status'] = 'paused'
+
+# Display playback status
+st.write(f"Playback Status: {st.session_state['playback_status']}")
