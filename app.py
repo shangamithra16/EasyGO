@@ -1,8 +1,7 @@
-import asyncio
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-import uuid
 import streamlit as st
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 # Spotify credentials from Streamlit secrets
@@ -33,18 +32,16 @@ def start_playback():
 def pause_playback():
     sp.pause_playback()
 
-# Asynchronous function to fetch playlists
-async def fetch_playlists(category_id, country="IN", limit=5):
-    loop = asyncio.get_event_loop()
+# Function to fetch playlists asynchronously using ThreadPoolExecutor
+def fetch_playlists(category_id, country="IN", limit=5):
     with ThreadPoolExecutor() as executor:
-        playlists = await loop.run_in_executor(executor, sp.category_playlists, category_id, country, limit)
+        playlists = executor.submit(sp.category_playlists, category_id, country, limit).result()
     return playlists['playlists']['items']
 
-# Asynchronous function to fetch tracks from a playlist
-async def fetch_tracks(playlist_id, limit=20):
-    loop = asyncio.get_event_loop()
+# Function to fetch tracks from a playlist asynchronously using ThreadPoolExecutor
+def fetch_tracks(playlist_id, limit=20):
     with ThreadPoolExecutor() as executor:
-        tracks = await loop.run_in_executor(executor, sp.playlist_items, playlist_id, limit)
+        tracks = executor.submit(sp.playlist_items, playlist_id, limit).result()
     return tracks['items']
 
 # UI setup
@@ -84,7 +81,7 @@ if st.session_state['room_id']:
 
     # Step 2: Fetch playlists asynchronously
     st.subheader(f"🎼 Trending Playlists in {selected_language}")
-    playlists = asyncio.run(fetch_playlists(category_id))
+    playlists = fetch_playlists(category_id)
 
     if playlists:
         playlist_names = [pl['name'] for pl in playlists]
@@ -95,7 +92,7 @@ if st.session_state['room_id']:
             playlist_id = selected_playlist['id']
 
             # Step 3: Get songs from playlist asynchronously
-            tracks = asyncio.run(fetch_tracks(playlist_id))
+            tracks = fetch_tracks(playlist_id)
             track_names = [item['track']['name'] + " - " + item['track']['artists'][0]['name'] for item in tracks]
             track_uris = [item['track']['uri'] for item in tracks]
 
