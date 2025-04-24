@@ -65,13 +65,14 @@ def pause_playback():
 
 # Streamlit interface
 st.title("Music Sync App")
+query = st.text_input("Search for music:")
 
 # Room Management (Create or Join Room)
 if create_or_join_room():
     st.session_state['track_uri'] = None  # Reset previous track URI
     
     # Music Search
-    query = st.text_input("Search for music:")
+    
     if query:
         track_names, track_uris = search_music(query)
         if track_names:
