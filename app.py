@@ -1,90 +1,108 @@
 import streamlit as st
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 import os
+import random
+from pydub import AudioSegment
 
-# Streamlit secrets (credentials)
-CLIENT_ID = st.secrets["CLIENT_ID"]
-CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
-REDIRECT_URI = st.secrets["REDIRECT_URI"]
+def load_audio_files(language):
+    audio_files = {}
+    for file in os.listdir("music_folder"):
+        if file.endswith(".wav"):
+            if language == "Chinese" and file.startswith("cn_"):
+                article_id = file.split(".")[0]
+                audio_files[article_id] = file
+            elif language == "English" and file.startswith("en_"):
+                article_id = file.split(".")[0]
+                audio_files[article_id] = file
+    return audio_files
 
-# Initialize Spotipy client
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=CLIENT_ID,
-                                               client_secret=CLIENT_SECRET,
-                                               redirect_uri=REDIRECT_URI,
-                                               scope="user-library-read user-read-playback-state user-modify-playback-state"))
+def play_audio(file):
+    audio_bytes = open("music_folder/" + file, "rb").read()
+    st.audio(audio_bytes, format="audio/wav")
 
-# Initialize Streamlit session state if not already initialized
-if 'room_id' not in st.session_state:
-    st.session_state['room_id'] = None
-if 'track_uri' not in st.session_state:
-    st.session_state['track_uri'] = None
-if 'playback_status' not in st.session_state:
-    st.session_state['playback_status'] = 'paused'
+def create_playlist(language, playlist_size, cn_audio_files, en_audio_files):
+    if language == "Chinese":
+        audio_files = list(cn_audio_files.values())
+    elif language == "English":
+        audio_files = list(en_audio_files.values())
 
-# Function to create or join a room
-def create_or_join_room():
-    room_id = st.text_input("Enter a Room ID (or create a new one):")
-    if room_id:
-        st.session_state['room_id'] = room_id
-        st.write(f"Room {room_id} selected.")
-        return True
-    return False
+    random.shuffle(audio_files)
+    playlist_files = audio_files[:playlist_size]
 
-# Function to search for music
-def search_music(query):
-    results = sp.search(q=query, type="track", limit=5)
-    
-    if not results['tracks']['items']:
-        st.write("No tracks found for your query. Please try a different search.")
-        return [], []
-    
-    tracks = results['tracks']['items']
-    track_names = [track['name'] for track in tracks]
-    track_uris = [track['uri'] for track in tracks]
-    
-    return track_names, track_uris
+    playlist = AudioSegment.empty()
+    for file in playlist_files:
+        audio = AudioSegment.from_wav("music_folder/" + file)
+        playlist += audio
 
-# Function to start playback
-def start_playback():
-    if st.session_state['track_uri']:
-        sp.start_playback(uris=[st.session_state['track_uri']])
+    output_path = "music_folder/playlist.wav"
+    playlist.export(output_path, format="wav")
 
-# Function to pause playback
-def pause_playback():
-    sp.pause_playback()
+    return output_path
 
-# Streamlit interface
-st.title("Music Sync App")
+def main():
+    st.title("Music Player")
 
-# Room Management (Create or Join Room)
-if create_or_join_room():
-    st.session_state['track_uri'] = None  # Reset previous track URI
-    
-    # Music Search
-    query = st.text_input("Search for music:")
-    if query:
-        track_names, track_uris = search_music(query)
-        if track_names:
-            st.write("Select a track:")
-            selected_track = st.selectbox("Choose a song:", track_names)
-            if selected_track:
-                track_index = track_names.index(selected_track)
-                st.session_state['track_uri'] = track_uris[track_index]
-                st.write(f"Selected Track: {selected_track}")
+    # Retrieve query parameters
+    query_params = st.experimental_get_query_params()
+    article_id = query_params.get("article_id", [None])[0]
 
-                # Control buttons to synchronize playback
-                play_button = st.button("Play")
-                pause_button = st.button("Pause")
+    # Language selection
+    language = st.selectbox("Language", ("Chinese", "English"))
 
-                if play_button:
-                    start_playback()
-                    st.session_state['playback_status'] = 'playing'
+    # Load audio files based on language selection
+    audio_files = load_audio_files(language)
 
-                if pause_button:
-                    pause_playback()
-                    st.session_state['playback_status'] = 'paused'
+    # Loop/Shuffle mode selection
+    mode = st.radio("Playback Mode", ("Loop", "Shuffle"), key="mode")
 
-# Display playback status
-st.write(f"Playback Status: {st.session_state['playback_status']}")
+    # Playlist size selection
+    playlist_size = st.slider("Playlist Size", min_value=5, max_value=20, value=10)
 
+    # Create Playlist button
+    if st.button("Create Playlist"):
+        cn_audio_files = {k: v for k, v in audio_files.items() if v.startswith("cn_")}
+        en_audio_files = {k: v for k, v in audio_files.items() if v.startswith("en_")}
+        playlist_path = create_playlist(language, playlist_size, cn_audio_files, en_audio_files)
+        st.audio(open(playlist_path, "rb").read(), format="audio/wav")
+
+    # Toggle between Chinese and English audio files
+    cn_audio_files = {k: v for k, v in audio_files.items() if v.startswith("cn_")}
+    en_audio_files = {k: v for k, v in audio_files.items() if v.startswith("en_")}
+
+    # Find matching audio file based on query parameter "article_id"
+    current_file = None
+    if article_id:
+        if language == "Chinese" and article_id in cn_audio_files:
+            current_file = cn_audio_files[article_id]
+        elif language == "English" and article_id in en_audio_files:
+            current_file = en_audio_files[article_id]
+
+    # Shuffle audio files if shuffle mode is selected
+    if mode == "Shuffle":
+        if language == "Chinese":
+            audio_files = list(cn_audio_files.values())
+            random.shuffle(audio_files)
+        elif language == "English":
+            audio_files = list(en_audio_files.values())
+            random.shuffle(audio_files)
+    else:
+        if language == "Chinese":
+            audio_files = list(cn_audio_files.values())
+        elif language == "English":
+            audio_files = list(en_audio_files.values())
+
+    # Display audio files
+    if len(audio_files) > 0:
+        for i, file in enumerate(audio_files):
+            if st.button(f"Play {file}", key=file):
+                query_params["article_id"] = [file.split(".")[0]]
+                st.experimental_set_query_params(**query_params)
+                play_audio(file)
+    else:
+        st.warning("No audio files available.")
+
+    # If requested file is not available, display a warning message
+    if not current_file and article_id:
+        st.warning(f"Warning: Audio file for article ID '{article_id}' not found.")
+
+if __name__ == "__main__":
+    main()
