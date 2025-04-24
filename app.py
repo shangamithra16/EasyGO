@@ -3,6 +3,9 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import uuid
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 
 # Load Spotify credentials from environment variables
 def require_env(name):
