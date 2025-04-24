@@ -1,22 +1,20 @@
 import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-import threading
-import time
 import uuid
 
-# Access the Spotify credentials from Streamlit secrets
+# Spotify credentials from Streamlit secrets
 CLIENT_ID = st.secrets["CLIENT_ID"]
 CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
 REDIRECT_URI = st.secrets["REDIRECT_URI"]
 
-# Initialize Spotipy client
+# Spotify client setup
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=CLIENT_ID,
                                                client_secret=CLIENT_SECRET,
                                                redirect_uri=REDIRECT_URI,
                                                scope="user-library-read user-read-playback-state user-modify-playback-state"))
 
-# Streamlit session state to track room and playback status
+# Session state
 if 'room_id' not in st.session_state:
     st.session_state['room_id'] = None
 if 'track_uri' not in st.session_state:
@@ -24,27 +22,18 @@ if 'track_uri' not in st.session_state:
 if 'playback_status' not in st.session_state:
     st.session_state['playback_status'] = 'paused'
 
-# Function to start playback
+# Playback control
 def start_playback():
     if st.session_state['track_uri']:
         sp.start_playback(uris=[st.session_state['track_uri']])
 
-# Function to pause playback
 def pause_playback():
     sp.pause_playback()
 
-# Function to search for music
-def search_music(query):
-    results = sp.search(q=query, type="track", limit=5)
-    tracks = results['tracks']['items']
-    track_names = [track['name'] for track in tracks]
-    track_uris = [track['uri'] for track in tracks]
-    return track_names, track_uris
+# UI setup
+st.title("🎶 Music Sync App with Live Spotify Data")
 
-# Streamlit interface
-st.title("🎵 Music Sync App")
-
-# Room selection
+# Room management
 st.subheader("Room Setup")
 room_action = st.radio("Do you want to create a new room or join an existing one?", ["Create Room", "Join Room"])
 
@@ -60,42 +49,65 @@ elif room_action == "Join Room":
         st.session_state['room_id'] = room_id_input
         st.success(f"Joined Room: {room_id_input}")
 
-# Proceed if room is active
 if st.session_state['room_id']:
     st.write(f"🛋️ Active Room ID: `{st.session_state['room_id']}`")
 
-    # Language selection
-    st.subheader("Select Language for Music Search")
-    languages = ["Tamil", "Hindi", "Telugu", "Malayalam", "Kannada", "Punjabi", "Bengali", "Gujarati", "Marathi", "English"]
-    selected_language = st.radio("Choose a language:", languages)
+    # Step 1: Language categories (manually mapped to Spotify category IDs)
+    language_to_category_id = {
+        "Tamil": "0JQ5DAqbMKFEC4WFtoNRpw",   # ID may vary
+        "Hindi (Bollywood)": "0JQ5DAqbMKFEC4WFtoNRpw",
+        "Telugu": "0JQ5DAqbMKFAXlCG6QvYQ4",
+        "Punjabi": "0JQ5DAqbMKFCfObibaOZbv",
+        "English": "0JQ5DAqbMKFDXXwE9BDJAr"
+    }
 
-    # Music search
+    st.subheader("🎵 Choose Music Language")
+    selected_language = st.selectbox("Pick a language:", list(language_to_category_id.keys()))
+    category_id = language_to_category_id[selected_language]
+
+    # Step 2: Fetch playlists for that category
+    st.subheader(f"🎼 Trending Playlists in {selected_language}")
+    playlists = sp.category_playlists(category_id=category_id, country="IN", limit=5)['playlists']['items']
+    playlist_names = [pl['name'] for pl in playlists]
+    selected_playlist_name = st.selectbox("Choose a playlist:", playlist_names)
+
+    if selected_playlist_name:
+        selected_playlist = next(pl for pl in playlists if pl['name'] == selected_playlist_name)
+        playlist_id = selected_playlist['id']
+
+        # Step 3: Get songs from playlist
+        tracks = sp.playlist_items(playlist_id, limit=20)['items']
+        track_names = [item['track']['name'] + " - " + item['track']['artists'][0]['name'] for item in tracks]
+        track_uris = [item['track']['uri'] for item in tracks]
+
+        selected_track = st.selectbox("🎧 Choose a song:", track_names)
+        if selected_track:
+            index = track_names.index(selected_track)
+            st.session_state['track_uri'] = track_uris[index]
+            st.write(f"🎶 Selected Track: {selected_track}")
+
+            if st.button("▶️ Play"):
+                start_playback()
+                st.session_state['playback_status'] = 'playing'
+            if st.button("⏸️ Pause"):
+                pause_playback()
+                st.session_state['playback_status'] = 'paused'
+
+    # Optional: manual search fallback
+    st.markdown("---")
+    st.subheader("🔍 Or search manually")
     query = st.text_input("Search for music:")
     if query:
-        full_query = f"{query} {selected_language} song"
-        track_names, track_uris = search_music(full_query)
-        if track_names:
-            st.write("Select a track:")
-            selected_track = st.selectbox("Choose a song:", track_names)
-            if selected_track:
-                track_index = track_names.index(selected_track)
-                st.session_state['track_uri'] = track_uris[track_index]
+        search_results = sp.search(q=query, type="track", limit=5)
+        results = search_results['tracks']['items']
+        names = [t['name'] + " - " + t['artists'][0]['name'] for t in results]
+        uris = [t['uri'] for t in results]
 
-                st.write(f"🎶 Selected Track: {selected_track}")
-                
-                # Playback controls
-                play_button = st.button("▶️ Play")
-                pause_button = st.button("⏸️ Pause")
+        selected_manual = st.selectbox("Choose from search:", names, key="manual")
+        if selected_manual:
+            idx = names.index(selected_manual)
+            st.session_state['track_uri'] = uris[idx]
+            st.write(f"🎶 Selected Track: {selected_manual}")
 
-                if play_button:
-                    start_playback()
-                    st.session_state['playback_status'] = 'playing'
-
-                if pause_button:
-                    pause_playback()
-                    st.session_state['playback_status'] = 'paused'
-        else:
-            st.warning("No tracks found. Try a different query or language.")
-
-    # Show playback status
-    st.write(f"Playback Status: {st.session_state['playback_status']}")
+# Show playback status
+st.write(f"📡 Playback Status: {st.session_state['playback_status']}")
