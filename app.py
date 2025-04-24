@@ -4,6 +4,7 @@ from spotipy.oauth2 import SpotifyOAuth
 import uuid
 import time
 import os
+import socket
 
 # Spotify credentials from environment variables or replace with your own
 SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID", "your_client_id")
@@ -35,7 +36,14 @@ if not room_id:
     if st.button("Create Room"):
         new_room_id = str(uuid.uuid4())
         st.experimental_set_query_params(room=new_room_id)
-        st.success(f"Room created! Share this link: {st.request.url}")
+        def get_base_url():
+            host = socket.gethostname()
+            port = os.getenv("PORT", "8501")  # Adjust if deployed with a specific port
+            return f"http://{host}:{port}"
+
+        base_url = get_base_url()
+        room_link = f"{base_url}/?room={new_room_id}"
+        st.success(f"Room created! Share this link: {room_link}")
         st.stop()
 else:
     st.success(f"Joined Room: {room_id}")
@@ -61,4 +69,3 @@ if st.button("Check Playback Status"):
         st.write(f"Currently Playing: {track['name']} by {track['artists'][0]['name']}")
     else:
         st.write("No music is currently playing.")
-
