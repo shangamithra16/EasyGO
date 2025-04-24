@@ -2,3 +2,5 @@ streamlit
 spotipy
 requests
 python-dotenv
+aiohttp==3.8.1
+spotipy==2.18.0
