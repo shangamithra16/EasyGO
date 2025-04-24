@@ -1,6 +1,6 @@
 import streamlit as st
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+import asyncio
+import aiohttp
 import uuid
 
 # Spotify credentials from Streamlit secrets
@@ -8,29 +8,31 @@ CLIENT_ID = st.secrets["CLIENT_ID"]
 CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
 REDIRECT_URI = st.secrets["REDIRECT_URI"]
 
-# Spotify client setup
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=CLIENT_ID,
-                                               client_secret=CLIENT_SECRET,
-                                               redirect_uri=REDIRECT_URI,
-                                               scope="user-library-read user-read-playback-state user-modify-playback-state"))
+# Define Spotify OAuth and headers
+BASE_URL = "https://api.spotify.com/v1"
+headers = {
+    "Authorization": f"Bearer {st.secrets['SPOTIFY_ACCESS_TOKEN']}"
+}
 
-# Session state
-if 'room_id' not in st.session_state:
-    st.session_state['room_id'] = None
-if 'track_uri' not in st.session_state:
-    st.session_state['track_uri'] = None
-if 'playback_status' not in st.session_state:
-    st.session_state['playback_status'] = 'paused'
+# Spotify API Request Function (Async)
+async def fetch_spotify_data(url, params=None):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers, params=params) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                st.error(f"Error fetching data: {response.status}")
+                return None
 
-# Playback control
-def start_playback():
-    if st.session_state['track_uri']:
-        sp.start_playback(uris=[st.session_state['track_uri']])
+# Playback control functions (as in your original code)
+def start_playback(track_uri):
+    # Start playback with the selected track URI
+    sp.start_playback(uris=[track_uri])
 
 def pause_playback():
     sp.pause_playback()
 
-# UI setup
+# Streamlit UI Setup
 st.title("🎶 Music Sync App with Live Spotify Data")
 
 # Room management
@@ -52,9 +54,9 @@ elif room_action == "Join Room":
 if st.session_state['room_id']:
     st.write(f"🛋️ Active Room ID: `{st.session_state['room_id']}`")
 
-    # Step 1: Language categories (manually mapped to Spotify category IDs)
+    # Language categories (as before)
     language_to_category_id = {
-        "Tamil": "0JQ5DAqbMKFEC4WFtoNRpw",   # ID may vary
+        "Tamil": "0JQ5DAqbMKFEC4WFtoNRpw",
         "Hindi (Bollywood)": "0JQ5DAqbMKFEC4WFtoNRpw",
         "Telugu": "0JQ5DAqbMKFAXlCG6QvYQ4",
         "Punjabi": "0JQ5DAqbMKFCfObibaOZbv",
@@ -65,11 +67,16 @@ if st.session_state['room_id']:
     selected_language = st.selectbox("Pick a language:", list(language_to_category_id.keys()))
     category_id = language_to_category_id[selected_language]
 
-    # Step 2: Fetch playlists for that category
-    st.subheader(f"🎼 Trending Playlists in {selected_language}")
-    
-    # Fetch playlists synchronously
-    playlists = sp.category_playlists(category_id=category_id, country="IN", limit=5)['playlists']['items']
+    # Fetch trending playlists asynchronously
+    async def fetch_playlists():
+        playlists_url = f"{BASE_URL}/browse/categories/{category_id}/playlists"
+        playlists_data = await fetch_spotify_data(playlists_url, {"country": "IN", "limit": 5})
+        if playlists_data:
+            return playlists_data['playlists']['items']
+        return []
+
+    playlists = asyncio.run(fetch_playlists())
+
     if playlists:
         playlist_names = [pl['name'] for pl in playlists]
         selected_playlist_name = st.selectbox("Choose a playlist:", playlist_names)
@@ -78,23 +85,29 @@ if st.session_state['room_id']:
             selected_playlist = next(pl for pl in playlists if pl['name'] == selected_playlist_name)
             playlist_id = selected_playlist['id']
 
-            # Step 3: Get songs from playlist
-            tracks = sp.playlist_items(playlist_id, limit=20)['items']
-            track_names = [item['track']['name'] + " - " + item['track']['artists'][0]['name'] for item in tracks]
-            track_uris = [item['track']['uri'] for item in tracks]
+            # Fetch songs from the selected playlist asynchronously
+            async def fetch_tracks():
+                tracks_url = f"{BASE_URL}/playlists/{playlist_id}/tracks"
+                tracks_data = await fetch_spotify_data(tracks_url, {"limit": 20})
+                if tracks_data:
+                    return tracks_data['items']
+                return []
 
-            selected_track = st.selectbox("🎧 Choose a song:", track_names)
-            if selected_track:
-                index = track_names.index(selected_track)
-                st.session_state['track_uri'] = track_uris[index]
-                st.write(f"🎶 Selected Track: {selected_track}")
+            tracks = asyncio.run(fetch_tracks())
+            if tracks:
+                track_names = [item['track']['name'] + " - " + item['track']['artists'][0]['name'] for item in tracks]
+                track_uris = [item['track']['uri'] for item in tracks]
 
-                if st.button("▶️ Play"):
-                    start_playback()
-                    st.session_state['playback_status'] = 'playing'
-                if st.button("⏸️ Pause"):
-                    pause_playback()
-                    st.session_state['playback_status'] = 'paused'
+                selected_track = st.selectbox("🎧 Choose a song:", track_names)
+                if selected_track:
+                    index = track_names.index(selected_track)
+                    st.session_state['track_uri'] = track_uris[index]
+                    st.write(f"🎶 Selected Track: {selected_track}")
+
+                    if st.button("▶️ Play"):
+                        start_playback(st.session_state['track_uri'])
+                    if st.button("⏸️ Pause"):
+                        pause_playback()
     else:
         st.write("No playlists found for the selected language.")
 
@@ -103,16 +116,23 @@ if st.session_state['room_id']:
     st.subheader("🔍 Or search manually")
     query = st.text_input("Search for music:")
     if query:
-        search_results = sp.search(q=query, type="track", limit=5)
-        results = search_results['tracks']['items']
-        names = [t['name'] + " - " + t['artists'][0]['name'] for t in results]
-        uris = [t['uri'] for t in results]
+        async def search_music():
+            search_url = f"{BASE_URL}/search"
+            search_results = await fetch_spotify_data(search_url, {"q": query, "type": "track", "limit": 5})
+            if search_results:
+                return search_results['tracks']['items']
+            return []
 
-        selected_manual = st.selectbox("Choose from search:", names, key="manual")
-        if selected_manual:
-            idx = names.index(selected_manual)
-            st.session_state['track_uri'] = uris[idx]
-            st.write(f"🎶 Selected Track: {selected_manual}")
+        search_results = asyncio.run(search_music())
+        if search_results:
+            names = [t['name'] + " - " + t['artists'][0]['name'] for t in search_results]
+            uris = [t['uri'] for t in search_results]
+
+            selected_manual = st.selectbox("Choose from search:", names, key="manual")
+            if selected_manual:
+                idx = names.index(selected_manual)
+                st.session_state['track_uri'] = uris[idx]
+                st.write(f"🎶 Selected Track: {selected_manual}")
 
 # Show playback status
 st.write(f"📡 Playback Status: {st.session_state['playback_status']}")
