@@ -1,87 +1,80 @@
 import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-import uuid
 import os
 from dotenv import load_dotenv
+
+# Load environment variables
 load_dotenv()
 
-# Load Spotify credentials from environment variables
-def require_env(name):
-    value = os.getenv(name)
-    if not value:
-        raise EnvironmentError(f"Missing required environment variable: {name}")
-    return value
+# Spotify credentials
+CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
+CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
+REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 
-SPOTIPY_CLIENT_ID = require_env("SPOTIPY_CLIENT_ID")
-SPOTIPY_CLIENT_SECRET = require_env("SPOTIPY_CLIENT_SECRET")
-SPOTIPY_REDIRECT_URI = require_env("SPOTIPY_REDIRECT_URI")
+# App setup
+st.title("🎵 Simple Music Player")
+st.write("Search and play your favorite songs!")
 
-SCOPE = "user-read-playback-state user-modify-playback-state user-read-currently-playing streaming"
-
-st.title("🎶 SyncTune – Listen Together")
-
-# Spotify Auth Setup
-@st.cache_resource
-def get_spotify_client():
+# Authentication function
+def authenticate_spotify():
     auth_manager = SpotifyOAuth(
-        client_id=SPOTIPY_CLIENT_ID,
-        client_secret=SPOTIPY_CLIENT_SECRET,
-        redirect_uri=SPOTIPY_REDIRECT_URI,
-        scope=SCOPE,
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        redirect_uri=REDIRECT_URI,
+        scope="user-library-read user-modify-playback-state streaming",
         cache_path=".cache"
     )
     return spotipy.Spotify(auth_manager=auth_manager)
 
-try:
-    sp = get_spotify_client()
-except Exception as e:
-    st.error(f"Failed to authenticate with Spotify: {str(e)}")
-    st.stop()
-
-# Room Management
-room_id = st.query_params.get("room")
-
-def get_base_url():
-    return os.getenv("BASE_URL", "http://localhost:8501")
-
-if not room_id:
-    if st.button("Create Room"):
-        new_room_id = str(uuid.uuid4())
-        st.query_params["room"] = new_room_id  # Set new room in query params
-        room_link = f"{get_base_url()}/?room={new_room_id}"
-        st.success(f"Room created! Share this link: {room_link}")
+# Initialize Spotify client
+if 'sp' not in st.session_state:
+    try:
+        st.session_state.sp = authenticate_spotify()
+        st.success("Connected to Spotify!")
+    except Exception as e:
+        st.error(f"Authentication failed: {str(e)}")
         st.stop()
-else:
-    st.success(f"Joined Room: {room_id}")
 
-# Music Search and Playback
-query = st.text_input("Search for a song:")
-if query:
-    try:
-        results = sp.search(q=query, type="track", limit=5)
-        for idx, item in enumerate(results['tracks']['items']):
-            track_name = item['name']
-            artists = ", ".join(artist['name'] for artist in item['artists'])
-            track_uri = item['uri']
-            st.write(f"{track_name} by {artists}")
-            if st.button(f"Play: {track_name}", key=idx):
+# Search and play functionality
+search_query = st.text_input("Search for songs, artists, or albums:")
+if search_query:
+    results = st.session_state.sp.search(q=search_query, type="track", limit=10)
+    
+    st.subheader("Search Results")
+    for idx, track in enumerate(results['tracks']['items']):
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.write(f"**{track['name']}** by {', '.join(artist['name'] for artist in track['artists'])}")
+        with col2:
+            if st.button("▶️ Play", key=f"play_{idx}"):
                 try:
-                    sp.start_playback(uris=[track_uri])
-                    st.success("Playback started!")
+                    st.session_state.sp.start_playback(uris=[track['uri']])
+                    st.success(f"Now playing: {track['name']}")
                 except Exception as e:
-                    st.error(f"Couldn't start playback: {str(e)}")
-    except Exception as e:
-        st.error(f"Search failed: {str(e)}")
+                    st.error(f"Couldn't play track: {str(e)}")
 
-# Playback Status
-if st.button("Check Playback Status"):
+# Player controls
+st.subheader("Player Controls")
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("⏸️ Pause"):
+        st.session_state.sp.pause_playback()
+with col2:
+    if st.button("▶️ Resume"):
+        st.session_state.sp.start_playback()
+with col3:
+    if st.button("⏭️ Next Track"):
+        st.session_state.sp.next_track()
+
+# Current playback info
+if st.button("ℹ️ Show Current Track"):
     try:
-        playback = sp.current_playback()
-        if playback and playback.get('is_playing'):
-            track = playback['item']
-            st.write(f"Currently Playing: {track['name']} by {track['artists'][0]['name']}")
+        current = st.session_state.sp.current_playback()
+        if current and current['is_playing']:
+            track = current['item']
+            st.write(f"**Now Playing:** {track['name']} by {', '.join(artist['name'] for artist in track['artists'])}")
         else:
-            st.write("No music is currently playing.")
-    except Exception as e:
-        st.error(f"Couldn't get playback status: {str(e)}")
+            st.write("No track currently playing")
+    except:
+        st.warning("Couldn't fetch playback info")
