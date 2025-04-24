@@ -2,20 +2,18 @@ import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import uuid
-import time
 import os
-import socket
 
-# Spotify credentials from environment variables or replace with your own
-SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID", "your_client_id")
-SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET", "your_client_secret")
-SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI", "http://localhost:8501")
+# Spotify credentials (replace "your_*" if not using env vars)
+SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
+SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
+SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 
 SCOPE = "user-read-playback-state user-modify-playback-state user-read-currently-playing streaming"
 
 st.title("🎶 SyncTune – Listen Together")
 
-# Auth Setup
+# Spotify Auth Setup
 @st.cache_resource
 def get_spotify_client():
     return spotipy.Spotify(auth_manager=SpotifyOAuth(
@@ -30,19 +28,18 @@ def get_spotify_client():
 sp = get_spotify_client()
 
 # Room Management
-room_id = st.experimental_get_query_params().get("room", [None])[0]
+query_params = st.experimental_get_query_params()
+room_id = query_params.get("room", [None])[0]
+
+# Build base URL (fallback to localhost)
+def get_base_url():
+    return os.getenv("BASE_URL", "http://localhost:8501")
 
 if not room_id:
     if st.button("Create Room"):
         new_room_id = str(uuid.uuid4())
         st.experimental_set_query_params(room=new_room_id)
-        def get_base_url():
-            host = socket.gethostname()
-            port = os.getenv("PORT", "8501")  # Adjust if deployed with a specific port
-            return f"http://{host}:{port}"
-
-        base_url = get_base_url()
-        room_link = f"{base_url}/?room={new_room_id}"
+        room_link = f"{get_base_url()}/?room={new_room_id}"
         st.success(f"Room created! Share this link: {room_link}")
         st.stop()
 else:
