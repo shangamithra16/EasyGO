@@ -32,13 +32,13 @@ def start_playback():
 def pause_playback():
     sp.pause_playback()
 
-# Function to fetch playlists asynchronously using ThreadPoolExecutor
-def fetch_playlists(category_id, country="IN", limit=5):
+# Function to search for playlists by language keyword
+def fetch_playlists_by_language(language_keyword, limit=5):
     with ThreadPoolExecutor() as executor:
-        playlists = executor.submit(sp.category_playlists, category_id, country, limit).result()
-    return playlists['playlists']['items']
+        results = executor.submit(sp.search, q=language_keyword, type='playlist', limit=limit).result()
+    return results['playlists']['items']
 
-# Function to fetch tracks from a playlist asynchronously using ThreadPoolExecutor
+# Function to fetch tracks from a playlist asynchronously
 def fetch_tracks(playlist_id, limit=20):
     with ThreadPoolExecutor() as executor:
         tracks = executor.submit(sp.playlist_items, playlist_id, limit).result()
@@ -66,22 +66,15 @@ elif room_action == "Join Room":
 if st.session_state['room_id']:
     st.write(f"🛋️ Active Room ID: `{st.session_state['room_id']}`")
 
-    # Step 1: Language categories (manually mapped to Spotify category IDs)
-    language_to_category_id = {
-        "Tamil": "0JQ5DAqbMKFEC4WFtoNRpw",   # ID may vary
-        "Hindi (Bollywood)": "0JQ5DAqbMKFEC4WFtoNRpw",
-        "Telugu": "0JQ5DAqbMKFAXlCG6QvYQ4",
-        "Punjabi": "0JQ5DAqbMKFCfObibaOZbv",
-        "English": "0JQ5DAqbMKFDXXwE9BDJAr"
-    }
+    # Step 1: Language choices
+    languages = ["Tamil", "Hindi (Bollywood)", "Telugu", "Punjabi", "English"]
 
     st.subheader("🎵 Choose Music Language")
-    selected_language = st.selectbox("Pick a language:", list(language_to_category_id.keys()))
-    category_id = language_to_category_id[selected_language]
+    selected_language = st.selectbox("Pick a language:", languages)
 
-    # Step 2: Fetch playlists asynchronously
-    st.subheader(f"🎼 Trending Playlists in {selected_language}")
-    playlists = fetch_playlists(category_id)
+    # Step 2: Fetch playlists by language keyword
+    st.subheader(f"🎼 Trending Playlists for {selected_language}")
+    playlists = fetch_playlists_by_language(selected_language)
 
     if playlists:
         playlist_names = [pl['name'] for pl in playlists]
@@ -91,7 +84,7 @@ if st.session_state['room_id']:
             selected_playlist = next(pl for pl in playlists if pl['name'] == selected_playlist_name)
             playlist_id = selected_playlist['id']
 
-            # Step 3: Get songs from playlist asynchronously
+            # Step 3: Get songs from selected playlist
             tracks = fetch_tracks(playlist_id)
             track_names = [item['track']['name'] + " - " + item['track']['artists'][0]['name'] for item in tracks]
             track_uris = [item['track']['uri'] for item in tracks]
